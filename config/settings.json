@@ -1,0 +1,16 @@
+{
+  "vim.normalModeKeyBindingsNonRecursive": [
+    {
+      "before": [
+        "<leader>",
+        "i",
+        "m",
+        "e"
+      ],
+      "commands": [
+        "editorImeMode.toggleCommandLineEnglish"
+      ]
+    }
+  ],
+  "vim.autoSwitchInputMethod.enable": false
+}

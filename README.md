@@ -1,0 +1,54 @@
+# Vim 模式感知输入法
+
+Code 用户运行副本仅在文件编辑输入区按 Vim 模式暂时移除 EditContext/设置只读，英文仍进入 VSCodeVim 原 type 路由；Insert 恢复原上下文。
+
+Leader ime 切命令/搜索限制，editorImeMode.enabled=false 关闭；GVim 本地 imdisable，终端 Vim 提供限定 X11 焦点的 IBus 兼容助手。
+
+## 安装
+
+这是独立 Git 仓库，可单独上传 GitHub。构建仅依赖 Bash、Python 3 标准库；逻辑模块使用 Node 18+。安装位置为实际运行 VS Code 窗口的 UI 端，当前部署目标为 Windows Code 1.145.2 + WSL Ubuntu 26.04。
+
+```sh
+bash package.sh
+code --install-extension dist/local.editor-ime-mode-0.1.0.vsix --force
+```
+
+Windows 上建议用 Windows Code CLI 安装。WSL 的 `code` 默认可能转交远程端，不要据此误判 UI 扩展安装位置。`package.json` 声明 `extensionKind: ["ui"]`。
+
+`config/settings.json` 和 `config/keybindings.json` 是本功能配置片段，必须按键/映射合并，不能整份覆盖已有配置。完整键位与保留 JSONC 注释的合并、备份、回滚工具见同级独立仓库 `vscode-custom-keybindings`。安装后由用户在合适时机 Reload Window；本脚本不会重启编辑器。
+
+## 测试
+
+```sh
+node --test test/*.test.js
+```
+
+联合回归：`cd ../vscode-custom-keybindings && bash test/run-integration.sh`。测试创建独立 Xvnc、用户配置、扩展目录和工作区；不使用登录态，不向日常桌面发送按键。Linux Code 测试运行副本与 VSCodeVim 1.32.4 的位置可通过 `EDITOR_TOOLS_TEST_CODE` / `EDITOR_TOOLS_TEST_VIM` 指定。
+
+2026-11-16 的联合结果：SV、Visual、分屏搜索、颜色标记次数/固定坐标、marker 一次撤销、Enter、快速分屏、Leader 共存、局部编辑区/终端限制均通过 Linux Code 1.145.2 集成检查。**这不等于 Windows 拼音和真实 Codex 提交已验收。** 原始结果在联合仓库的 `test-results/`，该目录不加入 Git。
+
+## 停用与卸载
+
+```sh
+code --uninstall-extension local.editor-ime-mode
+```
+
+在统一键位仓库执行受保护回滚，或仅删本仓库 config 中对应的键/映射。若安装后用户继续编辑了配置，回滚器拒绝覆盖后续修改，应根据备份合并恢复。
+
+## 兼容范围和限制
+
+Code 补丁只支持 1.145.2 / c4453f8ea430795f941c1b2ff6c9321135a74a02，检查原校验和及结构。Windows 真实微软拼音、GVim 尚未完整实测。终端兼容助手可恢复 IBus 引擎名称，但尚未实现拼音内部 Shift 状态的完整保存与恢复，也不宣称严格局部输入上下文。
+
+备份、测试日志、运行副本、VSIX、编译产物不纳入 Git。没有复制浏览器/Codex 凭据。源码按 MIT 许可提供。
+
+## 用户运行副本
+
+```sh
+bash build-vscode.sh --source "<系统 Code 安装目录>" --destination "<新的用户运行副本目录>"
+```
+
+构建时复制运行文件，只修改目标目录，原安装不变。先应用本仓库补丁，再应用可选的同级 shell-ime 补丁，两者都更新产品校验和。源码、commit、校验和或结构不匹配会失败，不能删除检查强行使用。
+
+当前 Windows 入口：`%LOCALAPPDATA%\editor-tools\code-ime.cmd`。先保存文件并完全退出全部 Code 窗口，再从该入口启动；已有主进程不会通过 Reload Window 切换二进制。用户运行副本与系统版共享配置和扩展，升级 Code 后须重新适配。
+
+Vim/GVim：在 vimrc 中加存在性检查后 source `vim/editor-ime.vim`；用 `bin/gvim` 为单个进程设置 IBUS_DISABLE_SNOOPER。终端兼容脚本需要系统 GI/IBus 及 X11；WSLg 无可靠终端 PID 祖先时保持原行为。停用时移除 source 块，关闭用户副本并从系统入口重开即可。

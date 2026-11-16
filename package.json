@@ -1,0 +1,47 @@
+{
+  "name": "editor-ime-mode",
+  "displayName": "Editor IME Mode",
+  "description": "Editor IME Mode — independently maintained local extension.",
+  "publisher": "local",
+  "version": "0.1.0",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.96.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "extensionKind": [
+    "ui"
+  ],
+  "main": "./extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "editorImeMode.toggleCommandLineEnglish",
+        "title": "editorImeMode.toggleCommandLineEnglish"
+      }
+    ],
+    "configuration": {
+      "title": "Editor IME Mode",
+      "properties": {
+        "editorImeMode.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable local editor IME control in the verified user runtime."
+        },
+        "editorImeMode.commandLineEnglish": {
+          "type": "boolean",
+          "default": true,
+          "description": "Start with English-only Vim command/search input."
+        }
+      }
+    }
+  },
+  "extensionDependencies": [
+    "vscodevim.vim"
+  ]
+}

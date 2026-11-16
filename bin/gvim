@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -euo pipefail
+export IBUS_DISABLE_SNOOPER=1
+exec /usr/bin/gvim "$@"
