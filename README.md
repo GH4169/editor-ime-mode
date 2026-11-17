@@ -47,7 +47,7 @@ Code 补丁只支持 1.145.2 / c4453f8ea430795f941c1b2ff6c9321135a74a02，检查
 bash build-vscode.sh --source "<系统 Code 安装目录>" --destination "<新的用户运行副本目录>"
 ```
 
-构建时复制运行文件，只修改目标目录，原安装不变。先应用本仓库补丁，再应用可选的同级 shell-ime 补丁，两者都更新产品校验和。源码、commit、校验和或结构不匹配会失败，不能删除检查强行使用。
+构建时复制运行文件，只修改目标目录，原安装不变。先应用本仓库补丁，再应用可选的同级 shell-ime 与 vscode-vim-navigation 补丁，各自更新产品校验和。导航补丁补上 Codex Webview 的焦点标识，供 Ctrl+H/L 往返使用；源码与独立 Git 历史保存在导航仓库。版本、commit、校验和或结构不匹配会失败，不能删除检查强行使用。
 
 当前 Windows 入口：`%LOCALAPPDATA%\editor-tools\code-ime.cmd`。先保存文件并完全退出全部 Code 窗口，再从该入口启动；已有主进程不会通过 Reload Window 切换二进制。用户运行副本与系统版共享配置和扩展，升级 Code 后须重新适配。
 

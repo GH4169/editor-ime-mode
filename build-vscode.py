@@ -40,13 +40,18 @@ try:
     shell = pathlib.Path(__file__).parent.parent / "shell-ime/patch-code.js"
     if shell.exists():
         subprocess.run(["node", str(shell), str(target)], check=True)
+    navigation = pathlib.Path(__file__).parent.parent / "vscode-vim-navigation/patch-code.js"
+    patches = ["editor-ime-mode", "shell-ime"]
+    if navigation.exists():
+        subprocess.run(["node", str(navigation), str(target)], check=True)
+        patches.append("vim-navigation")
     (dest / "EDITOR_TOOLS_RUNTIME.json").write_text(
         json.dumps(
             {
                 "source": str(source),
                 "version": product["version"],
                 "commit": product["commit"],
-                "patches": ["editor-ime-mode", "shell-ime"],
+                "patches": patches,
             },
             indent=2,
         )
