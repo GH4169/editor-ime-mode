@@ -25,6 +25,7 @@ test("IME context is restored on mode changes and blur; only file input is limit
     window: { addEventListener: (name, fn) => (win[name] = fn) },
     HTMLElement: Element,
     queueMicrotask: (fn) => fn(),
+    setInterval: () => {},
   };
   vm.createContext(sandbox);
   vm.runInContext(
@@ -46,4 +47,102 @@ test("IME context is restored on mode changes and blur; only file input is limit
   });
   handlers.focusin();
   assert.equal(sandbox.__editorImeMode.inspect().held, false);
+});
+
+function fixture() {
+  const handlers = {}, typed = [], native = [];
+  let interval;
+  class Element {}
+  const context = {};
+  const editor = Object.assign(new Element(), {
+    editContext: context,
+    readOnly: false,
+    closest: (selector) =>
+      [".monaco-editor", ".part.editor"].includes(selector) ? {} : null,
+    matches: (selector) => selector === "textarea.inputarea",
+    classList: { contains: () => false },
+  });
+  const document = {
+    activeElement: editor,
+    hasFocus: () => true,
+    addEventListener: (name, handler) => (handlers[name] = handler),
+  };
+  const sandbox = {
+    document,
+    window: { addEventListener: () => {} },
+    HTMLElement: Element,
+    queueMicrotask: (fn) => fn(),
+    setInterval: (fn) => (interval = fn),
+    __editorToolsType: (text) => typed.push(text),
+    __editorToolsImeRestricted: (value) => native.push(value),
+    __editorToolsHasKeybinding: () => false,
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(fs.readFileSync(require.resolve("../renderer"), "utf8"), sandbox);
+  const api = sandbox.__editorImeMode;
+  const dispatch = (name, properties = {}) => {
+    const event = {
+      target: document.activeElement, key: '', code: '',
+      shiftKey: false, ctrlKey: false, altKey: false, metaKey: false,
+      isComposing: false,
+      preventDefault() { this.prevented = true; },
+      stopImmediatePropagation() { this.stopped = true; },
+      ...properties,
+    };
+    handlers[name](event);
+    return event;
+  };
+  return { api, sandbox, editor, context, document, typed, native, dispatch, tick: () => interval() };
+}
+
+test("Windows Process/229 keys reach Vim once while IME composition is blocked only in Normal", () => {
+  const f = fixture();
+  f.api.set('vim.mode', 'Normal');
+  assert.deepEqual(f.native, [true]);
+  for (const properties of [
+    { key: 'Process', keyCode: 229, code: 'KeyH' },
+    { key: 'Process', code: 'Digit5', isComposing: true, shiftKey: true },
+    { key: 'Process', code: 'Semicolon', isComposing: true, shiftKey: true },
+    { key: 'Process', code: 'KeyV', shiftKey: true },
+  ]) assert.equal(f.dispatch('keydown', properties).stopped, true);
+  assert.deepEqual(f.typed, ['h', '%', ':', 'V']);
+  assert.equal(f.dispatch('beforeinput', { data: '中文', isComposing: true }).stopped, true);
+  assert.equal(f.dispatch('compositionstart').stopped, true);
+  assert.deepEqual(f.typed, ['h', '%', ':', 'V']);
+  assert.equal(f.dispatch('keydown', { key: 'a', ctrlKey: true }).stopped, undefined);
+  f.sandbox.__editorToolsHasKeybinding = () => true;
+  assert.equal(f.dispatch('keydown', { key: ' ', code: 'Space' }).stopped, undefined);
+  assert.equal(f.dispatch('keydown', { key: 'Enter', code: 'Enter' }).stopped, undefined);
+  f.api.set('vim.mode', 'Insert');
+  assert.equal(f.editor.editContext, f.context);
+  assert.equal(f.editor.readOnly, false);
+  assert.equal(f.dispatch('beforeinput', { data: '中文', isComposing: true }).stopped, undefined);
+  assert.equal(f.dispatch('keydown', { key: 'Process', code: 'KeyI', isComposing: true }).stopped, undefined);
+  assert.deepEqual(f.native, [true, false]);
+});
+
+test("Normal restriction follows actual file focus, Vim enablement and reattached EditContext", () => {
+  const f = fixture();
+  f.api.set('vim.mode', 'Normal');
+  f.editor.editContext = {};
+  f.tick();
+  assert.equal(f.editor.editContext, null);
+  f.api.set('vim.active', false);
+  assert.equal(f.editor.readOnly, false);
+  f.api.set('vim.active', true);
+  assert.equal(f.editor.readOnly, true);
+  f.api.set('vim.mode', 'SearchInProgressMode');
+  f.api.set('editorImeMode.commandLineEnglish', false);
+  assert.equal(f.editor.readOnly, false);
+  f.api.set('vim.mode', 'Normal');
+  f.document.activeElement = { closest: () => null };
+  f.dispatch('focusin');
+  assert.equal(f.editor.readOnly, false);
+  assert.equal(f.api.inspect().nativeRestricted, false);
+  f.document.activeElement = f.editor;
+  f.dispatch('focusin');
+  assert.equal(f.api.inspect().nativeRestricted, true);
+  f.api.set('editorImeMode.enabled', false);
+  assert.equal(f.editor.readOnly, false);
+  assert.equal(f.api.inspect().nativeRestricted, false);
 });

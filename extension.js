@@ -1,6 +1,18 @@
 'use strict';
 const vscode = require('vscode');
+const { startNativeHost } = require('./native-host');
 function activate(context) {
+  const output = vscode.window.createOutputChannel('Editor IME Mode');
+  context.subscriptions.push(output);
+  let nativeHost;
+  try {
+    nativeHost = startNativeHost(output);
+    if (nativeHost) context.subscriptions.push(nativeHost);
+  } catch (error) {
+    output.appendLine(error.message);
+    vscode.window.showErrorMessage(error.message);
+  }
+  let restricted = false;
   let commandLineEnglish = vscode.workspace
     .getConfiguration('editorImeMode')
     .get('commandLineEnglish', true);
@@ -18,6 +30,24 @@ function activate(context) {
       ),
     ]);
   context.subscriptions.push(
+    vscode.commands.registerCommand(
+      'editorImeMode.setInputRestricted',
+      (value) => {
+        restricted = value === true && vscode.window.state.focused &&
+          vscode.workspace.getConfiguration('editorImeMode').get('enabled', true);
+        nativeHost?.set(restricted);
+      }
+    ),
+    vscode.commands.registerCommand('editorImeMode.inspect', () => ({
+      restricted,
+      native: nativeHost?.inspect(),
+    })),
+    vscode.window.onDidChangeWindowState((state) => {
+      if (!state.focused) {
+        restricted = false;
+        nativeHost?.set(false);
+      }
+    }),
     vscode.commands.registerCommand(
       'editorImeMode.toggleCommandLineEnglish',
       async () => {

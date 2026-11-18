@@ -3,7 +3,7 @@
   "displayName": "Editor IME Mode",
   "description": "Editor IME Mode — independently maintained local extension.",
   "publisher": "local",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "license": "MIT",
   "engines": {
     "vscode": "^1.96.0"
@@ -31,7 +31,7 @@
         "editorImeMode.enabled": {
           "type": "boolean",
           "default": true,
-          "description": "Enable local editor IME control in the verified user runtime."
+          "description": "Force English in Vim Normal/Visual mode in the verified Code runtime; restore the previous input method for Insert and other input areas."
         },
         "editorImeMode.commandLineEnglish": {
           "type": "boolean",

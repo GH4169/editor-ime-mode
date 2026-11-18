@@ -48,7 +48,11 @@ ET.SubElement(
 )
 out = root / "dist" / (p["publisher"] + "." + p["name"] + "-" + p["version"] + ".vsix")
 out.parent.mkdir(exist_ok=True)
+helper = root / "build/editor-ime-host.exe"
+if not helper.is_file():
+    raise SystemExit("Build the Windows helper with build-native.ps1 before packaging")
 with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
+    z.write(helper, "extension/native/editor-ime-host.exe")
     z.writestr(
         "extension.vsixmanifest",
         ET.tostring(manifest, encoding="utf-8", xml_declaration=True),
