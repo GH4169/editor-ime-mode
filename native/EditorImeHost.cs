@@ -8,6 +8,12 @@ using System.Threading;
 // Only the foreground Code process related to this extension host is eligible.
 internal static class EditorImeHost
 {
+    private const uint WmImeControl = 0x0283;
+    private const int GetConversionMode = 0x0001;
+    private const int SetConversionMode = 0x0002;
+    private const int GetOpenStatus = 0x0005;
+    private const int SetOpenStatus = 0x0006;
+
     [StructLayout(LayoutKind.Sequential)]
     private struct Rect { public int Left, Top, Right, Bottom; }
     [StructLayout(LayoutKind.Sequential)]
@@ -38,7 +44,6 @@ internal static class EditorImeHost
     [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr window, out uint pid);
     [DllImport("user32.dll")] private static extern IntPtr GetKeyboardLayout(uint thread);
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern IntPtr LoadKeyboardLayout(string id, uint flags);
     [DllImport("user32.dll")] private static extern bool GetGUIThreadInfo(uint thread, ref GuiInfo info);
     [DllImport("user32.dll")] private static extern bool IsWindow(IntPtr window);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
@@ -58,7 +63,6 @@ internal static class EditorImeHost
     private static int desired;
     private static HashSet<uint> codeProcesses;
     private static Snapshot saved;
-    private static IntPtr english;
     private static bool Send(IntPtr window, uint message, IntPtr wParam, IntPtr lParam, out IntPtr result)
     {
         result = IntPtr.Zero;
@@ -96,74 +100,80 @@ internal static class EditorImeHost
         }
         return result;
     }
-    private static Snapshot Capture(IntPtr window, uint thread)
+    private static Snapshot Capture(IntPtr window, IntPtr focus, uint thread, IntPtr layout)
     {
-        var info = new GuiInfo { Size = Marshal.SizeOf(typeof(GuiInfo)) };
-        GetGUIThreadInfo(thread, ref info);
-        var state = new Snapshot {
-            Window = window, Thread = thread,
-            Focus = info.Focus == IntPtr.Zero ? window : info.Focus,
-            Layout = GetKeyboardLayout(thread)
-        };
-        IntPtr context = ImmGetContext(state.Focus);
+        var state = new Snapshot { Window = window, Focus = focus, Thread = thread, Layout = layout };
+        IntPtr context = ImmGetContext(focus);
         if (context != IntPtr.Zero)
         {
             state.HasContext = true;
             state.Open = ImmGetOpenStatus(context);
             state.HasConversion = ImmGetConversionStatus(context, out state.Conversion, out state.Sentence);
-            ImmReleaseContext(state.Focus, context);
+            ImmReleaseContext(focus, context);
+            return state;
         }
-        // Query the owning IME thread as well: modern Pinyin's context may not
-        // be exposed to ImmGetContext in an external process.
-        IntPtr ime = ImmGetDefaultIMEWnd(state.Focus), result;
-        if (Send(ime, 0x0283, new IntPtr(0x0005), IntPtr.Zero, out result))
+
+        // The owning IME window can respond when IMM does not expose a
+        // context to this process.
+        IntPtr ime = ImmGetDefaultIMEWnd(focus), result;
+        if (Send(ime, WmImeControl, new IntPtr(GetOpenStatus), IntPtr.Zero, out result))
         {
             state.HasContext = true;
             state.Open = result != IntPtr.Zero;
         }
-        if (Send(ime, 0x0283, new IntPtr(0x0001), IntPtr.Zero, out result))
+        if (Send(ime, WmImeControl, new IntPtr(GetConversionMode), IntPtr.Zero, out result))
         {
             state.HasConversion = true;
             state.Conversion = result.ToInt32();
         }
         return state;
     }
-    private static void CloseIme(IntPtr focus)
+    private static void SetImeState(Snapshot state, bool restore)
     {
-        IntPtr context = ImmGetContext(focus);
+        bool open = restore && state.Open;
+        bool openSet = false;
+        bool conversionSet = !restore || !state.HasConversion;
+        IntPtr context = ImmGetContext(state.Focus);
         if (context != IntPtr.Zero)
         {
-            ImmSetOpenStatus(context, false);
-            ImmReleaseContext(focus, context);
+            openSet = ImmGetOpenStatus(context) == open || ImmSetOpenStatus(context, open);
+            if (!conversionSet)
+                conversionSet = ImmSetConversionStatus(context, state.Conversion, state.Sentence);
+            ImmReleaseContext(state.Focus, context);
         }
-        // IMM routes this to the owning UI thread, including TSF compatibility.
-        Send(ImmGetDefaultIMEWnd(focus), 0x0283, new IntPtr(0x0006), IntPtr.Zero);
+        if (openSet && conversionSet) return;
+
+        IntPtr ime = ImmGetDefaultIMEWnd(state.Focus);
+        if (!openSet) Send(ime, WmImeControl, new IntPtr(SetOpenStatus), new IntPtr(open ? 1 : 0));
+        if (!conversionSet) Send(ime, WmImeControl, new IntPtr(SetConversionMode), new IntPtr(state.Conversion));
     }
     private static void Restrict(IntPtr window, uint thread)
     {
-        if (saved == null) saved = Capture(window, thread);
-        if (GetKeyboardLayout(thread) != english)
-            Send(window, 0x0050, IntPtr.Zero, english);
-        CloseIme(saved.Focus);
+        var info = new GuiInfo { Size = Marshal.SizeOf(typeof(GuiInfo)) };
+        GetGUIThreadInfo(thread, ref info);
+        IntPtr focus = info.Focus == IntPtr.Zero ? window : info.Focus;
+        IntPtr layout = GetKeyboardLayout(thread);
+
+        if (saved != null && (saved.Focus != focus || saved.Layout != layout))
+            Restore();
+        if (saved == null || !saved.HasContext)
+            saved = Capture(window, focus, thread, layout);
+        if (saved.HasContext)
+            SetImeState(saved, restore: false);
     }
     private static void Restore()
     {
         var state = saved;
         saved = null;
-        if (state == null || !IsWindow(state.Window)) return;
-        if (GetKeyboardLayout(state.Thread) != state.Layout)
-            Send(state.Window, 0x0050, IntPtr.Zero, state.Layout);
-        if (!state.HasContext || !IsWindow(state.Focus)) return;
-        IntPtr context = ImmGetContext(state.Focus);
-        if (context != IntPtr.Zero)
-        {
-            if (state.HasConversion) ImmSetConversionStatus(context, state.Conversion, state.Sentence);
-            ImmSetOpenStatus(context, state.Open);
-            ImmReleaseContext(state.Focus, context);
-        }
-        if (state.HasConversion)
-            Send(ImmGetDefaultIMEWnd(state.Focus), 0x0283, new IntPtr(0x0002), new IntPtr(state.Conversion));
-        Send(ImmGetDefaultIMEWnd(state.Focus), 0x0283, new IntPtr(0x0006), state.Open ? new IntPtr(1) : IntPtr.Zero);
+        if (state == null || !state.HasContext || !IsWindow(state.Window)) return;
+
+        // When the user selects another layout, the saved IME state belongs
+        // to the previous one and must not be applied to the new IME.
+        uint pid;
+        if (!IsWindow(state.Focus) || GetWindowThreadProcessId(state.Focus, out pid) != state.Thread ||
+            GetKeyboardLayout(state.Thread) != state.Layout) return;
+
+        SetImeState(state, restore: true);
     }
     private static int Main(string[] args)
     {
@@ -171,9 +181,6 @@ internal static class EditorImeHost
         {
             codeProcesses = CodeAncestors(uint.Parse(args[0]));
             if (codeProcesses.Count == 0) throw new InvalidOperationException("No related Code process found.");
-            // No KLF_ACTIVATE: loading English does not switch any foreground app.
-            english = LoadKeyboardLayout("00000409", 0);
-            if (english == IntPtr.Zero) throw new InvalidOperationException("Cannot load English keyboard layout.");
             Console.OutputEncoding = new UTF8Encoding(false);
             Console.WriteLine("Windows IME helper ready (foreground Code only).");
             var input = new Thread(() => {

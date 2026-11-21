@@ -49,7 +49,7 @@ test("IME context is restored on mode changes and blur; only file input is limit
   assert.equal(sandbox.__editorImeMode.inspect().held, false);
 });
 
-function fixture() {
+function fixture(platform) {
   const handlers = {}, typed = [], native = [];
   let interval;
   class Element {}
@@ -70,6 +70,7 @@ function fixture() {
   const sandbox = {
     document,
     window: { addEventListener: () => {} },
+    navigator: { platform },
     HTMLElement: Element,
     queueMicrotask: (fn) => fn(),
     setInterval: (fn) => (interval = fn),
@@ -95,12 +96,19 @@ function fixture() {
   return { api, sandbox, editor, context, document, typed, native, dispatch, tick: () => interval() };
 }
 
-test("Windows Process/229 keys reach Vim once while IME composition is blocked only in Normal", () => {
-  const f = fixture();
+test("Windows Normal and Visual use ASCII commands and block both IME input paths", () => {
+  const f = fixture('Win32');
+  assert.equal(f.api.inspect().nativeWindows, true);
   f.api.set('vim.mode', 'Normal');
   assert.deepEqual(f.native, [true]);
+  assert.equal(f.editor.editContext, null);
+  assert.equal(f.editor.readOnly, true);
+  assert.equal(f.dispatch('keydown', { key: 'Process', keyCode: 229, code: 'KeyH' }).stopped, true);
+  f.api.set('vim.mode', 'Visual');
+  assert.equal(f.editor.editContext, null);
+  assert.equal(f.editor.readOnly, true);
+  assert.deepEqual(f.native, [true]);
   for (const properties of [
-    { key: 'Process', keyCode: 229, code: 'KeyH' },
     { key: 'Process', code: 'Digit5', isComposing: true, shiftKey: true },
     { key: 'Process', code: 'Semicolon', isComposing: true, shiftKey: true },
     { key: 'Process', code: 'KeyV', shiftKey: true },
@@ -119,6 +127,17 @@ test("Windows Process/229 keys reach Vim once while IME composition is blocked o
   assert.equal(f.dispatch('beforeinput', { data: '中文', isComposing: true }).stopped, undefined);
   assert.equal(f.dispatch('keydown', { key: 'Process', code: 'KeyI', isComposing: true }).stopped, undefined);
   assert.deepEqual(f.native, [true, false]);
+});
+
+test('Windows restores the latest Monaco EditContext after it is replaced in Visual', () => {
+  const f = fixture('Win32');
+  f.api.set('vim.mode', 'Visual');
+  const replacementContext = {};
+  f.editor.editContext = replacementContext;
+  f.tick();
+  assert.equal(f.editor.editContext, null);
+  f.api.set('vim.mode', 'Insert');
+  assert.equal(f.editor.editContext, replacementContext);
 });
 
 test("Normal restriction follows actual file focus, Vim enablement and reattached EditContext", () => {

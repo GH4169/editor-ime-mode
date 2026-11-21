@@ -4,7 +4,6 @@ globalThis.__editorImeMode = (() => {
     enabled = true,
     commandLineEnglish = true,
     vimActive = true;
-  const saved = new WeakMap();
   let held = null, nativeRestricted, nativeBridge, lastNativeUpdate = 0;
   const nativeWindows = globalThis.navigator?.platform === 'Win32';
   const restricted = () =>
@@ -25,14 +24,12 @@ globalThis.__editorImeMode = (() => {
   }
   function restore() {
     notifyNative(false);
-    if (!held) return;
-    const state = saved.get(held);
-    if (state) {
-      if (state.editContext) held.editContext = state.editContext;
-      if (state.readOnly !== undefined) held.readOnly = state.readOnly;
-      saved.delete(held);
-    }
+    const state = held;
     held = null;
+    if (!state) return;
+    if (state.editContext && !state.element.editContext)
+      state.element.editContext = state.editContext;
+    if (state.readOnly !== undefined) state.element.readOnly = state.readOnly;
   }
   function update() {
     const element = document.activeElement;
@@ -47,21 +44,21 @@ globalThis.__editorImeMode = (() => {
       restore();
       return;
     }
-    if (held !== element) {
+    if (held?.element !== element) {
       if (held) restore();
-      saved.set(element, {
-        editContext: element.editContext,
+      held = {
+        element,
         readOnly: 'readOnly' in element ? element.readOnly : undefined,
-      });
-      held = element;
+      };
     }
     notifyNative(true);
-    // Windows keeps its native context so the helper can capture and restore
-    // Microsoft Pinyin's original open/conversion state before switching English.
-    if (!nativeWindows) {
-      if (element.editContext) element.editContext = null;
-      if ('readOnly' in element) element.readOnly = true;
+    // EditContext delivers IME text straight to Monaco. Detach it while Vim
+    // handles keys here so the editor stays English even if an IME ignores IMM.
+    if (element.editContext) {
+      held.editContext = element.editContext;
+      element.editContext = null;
     }
+    if (held.readOnly !== undefined) element.readOnly = true;
   }
   document.addEventListener('focusin', update, true);
   document.addEventListener('focusout', () => queueMicrotask(update), true);
@@ -97,7 +94,7 @@ globalThis.__editorImeMode = (() => {
       if (
         !held ||
         !restricted() ||
-        event.target !== held ||
+        event.target !== held.element ||
         event.ctrlKey ||
         event.altKey ||
         event.metaKey
@@ -120,7 +117,7 @@ globalThis.__editorImeMode = (() => {
   for (const name of ['compositionstart', 'compositionupdate', 'compositionend', 'beforeinput', 'input']) {
     document.addEventListener(name, (event) => {
       update();
-      if (!held || event.target !== held || !restricted()) return;
+      if (!held || event.target !== held.element || !restricted()) return;
       event.preventDefault();
       event.stopImmediatePropagation();
     }, true);

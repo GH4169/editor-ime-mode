@@ -1,8 +1,8 @@
 # Vim 模式感知输入法
 
-Code 用户运行副本仅在文件编辑输入区按 Vim 模式强制英文。Windows 0.2.0 使用原生助手切换当前 Code 窗口的键盘布局并关闭 IME；Insert/Replace、终端、搜索框、聊天输入框和切走窗口时恢复之前的布局及可读取的 IME 状态。Linux 继续临时移除 EditContext/设置只读。英文按键进入 VSCodeVim 原 type 队列。
+Code 用户运行副本在文件编辑区的 Vim Normal/Visual 模式下使用英文直输。Windows 助手暂时关闭当前键盘布局下的 IME，进入 Insert/Replace、焦点离开编辑区或切走窗口时恢复原先的 IME 状态。插件保留 Windows 当前的键盘布局和布局列表。
 
-修复旧版两处失效：桌面/开始菜单入口仍可能启动没有补丁的系统原版；微软拼音可能把字母键上报为 `Process/229`，旧 listener 会漏掉这些按键。0.2.0 补全物理英文键回退及 Normal 组合输入拦截，并在 Monaco 替换输入节点/重挂 EditContext 后重新检查。关闭 Vim 或 `editorImeMode.enabled=false` 会恢复输入。
+限制输入时，编辑区会暂时解除 Monaco EditContext 的绑定，英文按键进入 VSCodeVim 原 type 队列。微软拼音上报 `Process/229` 时，插件根据物理键恢复英文按键。关闭 Vim 或 `editorImeMode.enabled=false` 会恢复输入。
 
 Leader ime 切命令/搜索限制，editorImeMode.enabled=false 关闭；GVim 本地 imdisable，终端 Vim 提供限定 X11 焦点的 IBus 兼容助手。
 
@@ -13,7 +13,7 @@ Leader ime 切命令/搜索限制，editorImeMode.enabled=false 关闭；GVim �
 ```sh
 # 先在 Windows PowerShell 执行 .\build-native.ps1
 bash package.sh
-code --install-extension dist/local.editor-ime-mode-0.2.0.vsix --force
+code --install-extension dist/local.editor-ime-mode-0.2.1.vsix --force
 ```
 
 Windows 上建议用 Windows Code CLI 安装。WSL 的 `code` 默认可能转交远程端，不要据此误判 UI 扩展安装位置。`package.json` 声明 `extensionKind: ["ui"]`。
@@ -30,7 +30,7 @@ node --test test/*.test.js
 
 联合回归：`cd ../vscode-custom-keybindings && bash test/run-integration.sh`。测试创建独立 Xvnc、用户配置、扩展目录和工作区；不使用登录态，不向日常桌面发送按键。Linux Code 测试运行副本与 VSCodeVim 1.32.4 的位置可通过 `EDITOR_TOOLS_TEST_CODE` / `EDITOR_TOOLS_TEST_VIM` 指定。
 
-Windows 原生检查：PowerShell 执行 `test\run-native.ps1`。它只创建不可见测试窗口，验证真实 Win32 英文切换/布局恢复、重复恢复、前台应用布局和焦点不变。测试不输入拼音、不操作日常窗口。
+在 PowerShell 执行 `test\run-native.ps1`，用隐藏测试窗口验证 IME 开闭及恢复、重复恢复、键盘布局列表和前台焦点。Windows 中文组合输入由渲染层测试模拟。
 
 2026-11-16 的联合结果：SV、Visual、分屏搜索、颜色标记次数/固定坐标、marker 一次撤销、Enter、快速分屏、Leader 共存、局部编辑区/终端限制均通过 Linux Code 1.145.2 集成检查。**这不等于 Windows 拼音和真实 Codex 提交已验收。** 原始结果在联合仓库的 `test-results/`，该目录不加入 Git。
 
@@ -46,7 +46,7 @@ code --uninstall-extension local.editor-ime-mode
 
 ## 兼容范围和限制
 
-Code 补丁只支持 1.145.2 / c4453f8ea430795f941c1b2ff6c9321135a74a02，检查原校验和及结构。Windows helper 仅接受关联的 Code 进程、前台窗口和 renderer 代码输入焦点请求；不激活窗口、不发送系统按键、不修改其他程序的输入法。通过 WM_INPUTLANGCHANGEREQUEST 切英文布局，通过 IMM 读取/恢复 open/conversion；不同 TSF 输入法对 IMM 的支持有差异，无法保证所有输入法内部状态都可读取。Windows 真实微软拼音、GVim 尚未完整实测。终端兼容助手可恢复 IBus 引擎名称，但尚未实现拼音内部 Shift 状态的完整保存与恢复。
+Code 补丁只支持 1.145.2 / c4453f8ea430795f941c1b2ff6c9321135a74a02，并检查原校验和及结构。Windows 助手仅接受关联的前台 Code 窗口的编辑区请求，通过 IMM 控制和恢复可读取的 IME 状态。不同 TSF 输入法对 IMM 的支持有差异，编辑区同时在渲染层拦截组合输入。终端兼容助手支持恢复 IBus 引擎名称。
 
 备份、测试日志、运行副本、VSIX、编译产物不纳入 Git。没有复制浏览器/Codex 凭据。源码按 MIT 许可提供。
 
